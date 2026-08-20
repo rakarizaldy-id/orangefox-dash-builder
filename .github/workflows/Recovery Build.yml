@@ -7,10 +7,9 @@ on:
         description: "Select Device Tree repository"
         required: true
         type: choice
-        default: https://github.com/AzzyC/ofox_device_xiaomi_peridot
+        default: https://github.com/xiaomi-kunzite/android_device_xiaomi_kunzite-twrp
         options:
-          - https://github.com/AzzyC/ofox_device_xiaomi_peridot
-          - https://gitlab.com/OrangeFox/device/peridot_new
+          - https://github.com/xiaomi-kunzite/android_device_xiaomi_kunzite-twrp
 
       device_tree_branch:
         description: "Select Device Tree branch"
@@ -19,16 +18,15 @@ on:
         type: choice
         options:
           - fox_14.1
-          - auto-dfe
 
-      notification_mode:
-        description: "Select Telegram notification mode"
+      send_notification:
+        description: "Send Telegram notifications"
         required: true
         type: choice
-        default: quiet
+        default: "yes"
         options:
-          - quiet
-          - loud
+          - "yes"
+          - "no"
 
 jobs:
   build:
@@ -42,11 +40,12 @@ jobs:
       MANIFEST_BRANCH: 14.1
       DEVICE_TREE_URL: ${{ inputs.device_tree_url }}
       DEVICE_TREE_BRANCH: ${{ inputs.device_tree_branch }}
-      DEVICE_PATH: device/xiaomi/peridot
-      DEVICE_NAME: peridot
-      MAKEFILE_NAME: twrp_peridot-ap2a-eng
+      DEVICE_PATH: device/xiaomi/kunzite
+      DEVICE_NAME: kunzite
+      MAKEFILE_NAME: twrp_kunzite-ap2a-eng
       BUILD_TARGET: recovery
-      TELEGRAM_CHAT_ID: ${{ inputs.notification_mode == 'quiet' && '-1002917930475' || '-1001480977582' }}
+      SEND_NOTIFICATION: ${{ inputs.send_notification }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
     steps:
 
@@ -58,6 +57,9 @@ jobs:
       run: |
         cat <<'EOF' > /tmp/send_msg.sh
         #!/bin/bash
+        if [ "${{ env.SEND_NOTIFICATION }}" != "yes" ]; then
+          exit 0
+        fi
         MSG="$(printf "$1")"
         curl -s --fail \
           -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
@@ -71,7 +73,7 @@ jobs:
 
     - name: Initialize workspace
       run: |
-        /tmp/send_msg.sh "🚀 *Starting OrangeFox build* for \`${{ env.DEVICE_NAME }}\` (\`${{ env.DEVICE_TREE_BRANCH }}\`)\n🔗 [View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+        /tmp/send_msg.sh "Starting OrangeFox build for ${{ env.DEVICE_NAME }} (${{ env.DEVICE_TREE_BRANCH }})\n[View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
         mkdir workspace
         cd workspace
         echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
@@ -79,7 +81,7 @@ jobs:
 
     - name: Prepare the build environment
       run: |
-        /tmp/send_msg.sh "🧩 Preparing build environment..."
+        /tmp/send_msg.sh "Preparing build environment..."
         DEBIAN_FRONTEND=noninteractive sudo apt install -yq \
             linux-modules-extra-$(uname -r) \
             git python3 tar aria2
@@ -95,7 +97,7 @@ jobs:
 
     - name: Sync OrangeFox sources and minimal manifest
       run: |
-        /tmp/send_msg.sh "🌐 Syncing OrangeFox sources..."
+        /tmp/send_msg.sh "Syncing OrangeFox sources..."
         cd ${{ steps.pwd.outputs.workspace-folder }}
         git clone --depth=1 ${{ env.SYNC_URL }}
         cd sync
@@ -104,7 +106,7 @@ jobs:
 
     - name: Clone device tree
       run: |
-        /tmp/send_msg.sh "🌲 Cloning device tree for \`${{ env.DEVICE_NAME }}\`..."
+        /tmp/send_msg.sh "Cloning device tree for ${{ env.DEVICE_NAME }}..."
         cd ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ env.MANIFEST_BRANCH }}
         git clone --depth=1 ${{ env.DEVICE_TREE_URL }} -b ${{ env.DEVICE_TREE_BRANCH }} ./${{ env.DEVICE_PATH }}
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
@@ -116,7 +118,7 @@ jobs:
         LATEST_COMMIT=$(git rev-parse --short=7 HEAD)
         echo "LATEST_COMMIT=$LATEST_COMMIT" >> $GITHUB_OUTPUT
         echo "Latest device tree commit: $LATEST_COMMIT"
-        /tmp/send_msg.sh "🌲 Device tree: [${LATEST_COMMIT}](${{ env.DEVICE_TREE_URL }}/tree/$LATEST_COMMIT)"
+        /tmp/send_msg.sh "Device tree commit: [${LATEST_COMMIT}](${{ env.DEVICE_TREE_URL }}/tree/$LATEST_COMMIT)"
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Set Swap Space
@@ -126,7 +128,7 @@ jobs:
 
     - name: Show system resources
       run: |
-        /tmp/send_msg.sh "📊 Checking runner resources..."
+        /tmp/send_msg.sh "Checking runner resources..."
         echo "CPU cores:"
         nproc
         echo
@@ -139,7 +141,7 @@ jobs:
 
     - name: Building recovery
       run: |
-        /tmp/send_msg.sh "⚙️ Starting build for \`${{ env.DEVICE_NAME }}\`..."
+        /tmp/send_msg.sh "Starting build for ${{ env.DEVICE_NAME }}..."
         cd ${{ steps.pwd.outputs.workspace-folder }}/fox_${{ env.MANIFEST_BRANCH }}
 
         set +e
@@ -150,14 +152,14 @@ jobs:
         lunch ${{ env.MAKEFILE_NAME }}
 
         if ! mka adbd ${{ env.BUILD_TARGET }}image -j$(nproc --all); then
-          /tmp/send_msg.sh "❌ Build failed for \`${{ env.DEVICE_NAME }}\` (\`${{ env.DEVICE_TREE_BRANCH }}\`)\n🔗 [View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          /tmp/send_msg.sh "Build failed for ${{ env.DEVICE_NAME }} (${{ env.DEVICE_TREE_BRANCH }})\n[View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           exit 1
         fi
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Show system resources post-build
       run: |
-        /tmp/send_msg.sh "📊 Checking runner resources after build..."
+        /tmp/send_msg.sh "Checking runner resources after build..."
         echo "CPU cores:"
         nproc
         echo
@@ -191,4 +193,4 @@ jobs:
       run: |
         RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${{ github.run_id }}"
         DEVICE_TREE_BROWSE_URL="${{ env.DEVICE_TREE_URL }}/tree/${{ steps.devtree_commit.outputs.LATEST_COMMIT }}"
-        /tmp/send_msg.sh "📦 *Build complete!*\n🔗 [Download]($RELEASE_URL)\n🌲 Device tree branch: \`${{ env.DEVICE_TREE_BRANCH }}\`\n🌲 Device tree commit: [${{ steps.devtree_commit.outputs.LATEST_COMMIT }}]($DEVICE_TREE_BROWSE_URL)"
+        /tmp/send_msg.sh "Build complete.\n[Download]($RELEASE_URL)\nDevice tree branch: ${{ env.DEVICE_TREE_BRANCH }}\nDevice tree commit: [${{ steps.devtree_commit.outputs.LATEST_COMMIT }}]($DEVICE_TREE_BROWSE_URL)"
