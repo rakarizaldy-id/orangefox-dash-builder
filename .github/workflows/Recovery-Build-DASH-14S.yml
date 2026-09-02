@@ -1,0 +1,211 @@
+name: DASH OrangeFox First Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    env:
+      MANIFEST_BRANCH: "14.1"
+      DEVICE_NAME: "dash"
+      DEVICE_PATH: "device/xiaomi/dash"
+      LUNCH_TARGET: "twrp_dash-ap2a-eng"
+
+      DEVICE_TREE_URL: "https://github.com/rakarizaldy-id/android_device_xiaomi_dash-recovery.git"
+      DEVICE_TREE_COMMIT: "847e008590cb0afe767f6a0adf0b32bb021ced1e"
+
+      KERNEL_REPO: "https://github.com/xiaomi-dash/android_device_xiaomi_dash-kernel.git"
+      KERNEL_COMMIT: "c3d766d2d99e6344649f9eeca52d405d48ca75dc"
+
+      MTK_HW_REPO: "https://github.com/xiaomi-dash/android_hardware_mediatek.git"
+      MTK_HW_COMMIT: "f33158d67c9042e15a1cf4b7acd59f541efa2f43"
+
+      MTK_SEPOLICY_REPO: "https://github.com/xiaomi-dash/android_device_mediatek_sepolicy_vndr.git"
+      MTK_SEPOLICY_COMMIT: "3d1497d2f96569f406e33c98af7b6bf7f1714287"
+
+      FOX_SYNC_REPO: "https://gitlab.com/OrangeFox/sync.git"
+      FOX_SYNC_COMMIT: "14eca5f7"
+
+    steps:
+      - name: Cleanup GitHub runner
+        uses: rokibhasansagar/slimhub_actions@main
+
+      - name: Initialize workspace
+        id: work
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/workspace"
+          echo "root=${GITHUB_WORKSPACE}/workspace" >> "$GITHUB_OUTPUT"
+          echo "fox=${GITHUB_WORKSPACE}/workspace/fox_14.1" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare build environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          DEBIAN_FRONTEND=noninteractive sudo apt-get install -yq \
+            linux-modules-extra-$(uname -r) \
+            git python3 tar aria2 xz-utils
+          cd "${{ steps.work.outputs.root }}"
+          curl -fsSLO "https://gitlab.com/OrangeFox/misc/scripts/-/raw/master/setup/android_build_env.sh"
+          sudo bash android_build_env.sh
+
+      - name: Install OpenJDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "11"
+
+      - name: Sync OrangeFox fox_14.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${{ steps.work.outputs.root }}"
+          git clone "${FOX_SYNC_REPO}" sync
+          cd sync
+          git checkout "${FOX_SYNC_COMMIT}"
+          ./orangefox_sync.sh \
+            --branch "${MANIFEST_BRANCH}" \
+            --path "${{ steps.work.outputs.fox }}"
+
+      - name: Install locked DASH sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          FOX="${{ steps.work.outputs.fox }}"
+          cd "$FOX"
+
+          git clone --depth=1 "${DEVICE_TREE_URL}" "${DEVICE_PATH}"
+          test "$(git -C "${DEVICE_PATH}" rev-parse HEAD)" = "${DEVICE_TREE_COMMIT}"
+
+          clone_locked() {
+            repo="$1"
+            commit="$2"
+            path="$3"
+            mkdir -p "$(dirname "$path")"
+            git init "$path"
+            git -C "$path" remote add origin "$repo"
+            git -C "$path" fetch --depth=1 origin "$commit"
+            git -C "$path" checkout --detach FETCH_HEAD
+            test "$(git -C "$path" rev-parse HEAD)" = "$commit"
+          }
+
+          clone_locked "${KERNEL_REPO}" "${KERNEL_COMMIT}" "device/xiaomi/dash-kernel"
+          clone_locked "${MTK_HW_REPO}" "${MTK_HW_COMMIT}" "hardware/mediatek"
+          clone_locked "${MTK_SEPOLICY_REPO}" "${MTK_SEPOLICY_COMMIT}" "device/mediatek/sepolicy_vndr"
+
+          cat > "${GITHUB_WORKSPACE}/DASH-SOURCE-LOCK-14R.txt" <<EOF
+          OrangeFox branch: ${MANIFEST_BRANCH}
+          OrangeFox sync: ${FOX_SYNC_COMMIT}
+          DASH tree: ${DEVICE_TREE_COMMIT}
+          DASH kernel: ${KERNEL_COMMIT}
+          MediaTek hardware: ${MTK_HW_COMMIT}
+          MediaTek sepolicy_vndr: ${MTK_SEPOLICY_COMMIT}
+          EOF
+
+      - name: Verify DASH authority files
+        shell: bash
+        run: |
+          set -euo pipefail
+          FOX="${{ steps.work.outputs.fox }}"
+          cd "$FOX"
+
+          test "$(sha256sum device/xiaomi/dash/recovery/recovery.fstab | awk '{print $1}')" \
+            = "6dfa0c7f056b17a41a68a726ca184c1e002ac2250137b99a3dd70123c8e58bdc"
+
+          test "$(sha256sum device/xiaomi/dash/BoardConfig.mk | awk '{print $1}')" \
+            = "2c8bdef46e74258a98c9ecf84bd3c4136731717cebe3ba23d3dd249cb41cecee"
+
+          test "$(sha256sum device/xiaomi/dash/recovery_device.mk | awk '{print $1}')" \
+            = "a9ef832f6cab398e1fb317941656e1737fae391d067f0f392f1bfbe88af5568d"
+
+          test "$(sha256sum device/xiaomi/dash/fenrir/dash-fenrir-lk.xz | awk '{print $1}')" \
+            = "5b554a903ee6edf34fd17345a9e2c8db62fcee1fdc2f2924138c4a189fe3f933"
+
+          test "$(sha256sum device/xiaomi/dash/fenrir/dash-fenrir-preloader.xz | awk '{print $1}')" \
+            = "24680c0992bf7accda36c53c41d2042334427cf5045a9a67328089bd307bcf73"
+
+          test "$(sha256sum device/xiaomi/dash/fenrir/dash-fenrir-status.sh | awk '{print $1}')" \
+            = "5bc92f1dee8b29cad587f28648a2e831511c197c2102e756f37df2632d93925e"
+
+          if grep -Eiq '(^|,)(avb|avb_keys|avb=|avb_keys=)' device/xiaomi/dash/recovery/recovery.fstab; then
+            echo "ERROR: AVB fstab token detected"
+            exit 1
+          fi
+
+          echo "DASH authority verification PASS"
+
+      - name: Set 30 GB swap
+        uses: pierotofy/set-swap-space@fc79b3f67fa8a838184ce84a674ca12238d2c761
+        with:
+          swap-size-gb: 30
+
+      - name: Show resources before build
+        shell: bash
+        run: |
+          echo "=== CPU ==="
+          nproc
+          echo "=== MEMORY ==="
+          free -h
+          echo "=== DISK ==="
+          df -h
+
+      - name: Build OrangeFox DASH
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${{ steps.work.outputs.fox }}"
+
+          source build/envsetup.sh
+          lunch "${LUNCH_TARGET}"
+
+          # Deliberately DO NOT set ALLOW_MISSING_DEPENDENCIES.
+          mka adbd recoveryimage -j"$(nproc --all)" 2>&1 | tee "${GITHUB_WORKSPACE}/dash-build.log"
+
+      - name: Collect first-build outputs
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          OUT="${{ steps.work.outputs.fox }}/out/target/product/dash"
+          DEST="${GITHUB_WORKSPACE}/DASH-14S-OUTPUT"
+          mkdir -p "$DEST"
+
+          cp -f "${GITHUB_WORKSPACE}/DASH-SOURCE-LOCK-14R.txt" "$DEST/" 2>/dev/null || true
+          cp -f "${GITHUB_WORKSPACE}/dash-build.log" "$DEST/" 2>/dev/null || true
+
+          if [ -d "$OUT" ]; then
+            find "$OUT" -maxdepth 2 -type f \
+              \( -name 'OrangeFox-R*.zip' \
+                 -o -name 'OrangeFox-R*.img' \
+                 -o -name 'vendor_ramdisk_recovery.cpio' \
+                 -o -name 'recovery.img' \
+                 -o -name 'vendor_boot.img' \) \
+              -exec cp -f {} "$DEST/" \;
+
+            {
+              echo "=== OUT FILES ==="
+              find "$OUT" -maxdepth 2 -type f -printf '%p %s bytes\n' | sort
+              echo
+              echo "=== SHA256 COLLECTED ==="
+              cd "$DEST"
+              sha256sum * 2>/dev/null || true
+            } > "$DEST/output-inventory.txt"
+          fi
+
+          echo "=== POST-BUILD RESOURCES ===" >> "$DEST/output-inventory.txt"
+          free -h >> "$DEST/output-inventory.txt" 2>&1
+          df -h >> "$DEST/output-inventory.txt" 2>&1
+
+      - name: Upload DASH first-build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DASH-OrangeFox-14S-${{ github.run_id }}
+          path: DASH-14S-OUTPUT/
+          if-no-files-found: warn
+          retention-days: 7
