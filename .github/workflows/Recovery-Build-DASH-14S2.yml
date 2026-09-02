@@ -157,7 +157,9 @@ jobs:
       - name: Build OrangeFox DASH
         shell: bash
         run: |
-          set -euo pipefail
+          # Android build/envsetup.sh expects some variables to be unset initially.
+          # Do not use bash nounset (-u) while sourcing the Android build environment.
+          set -eo pipefail
           cd "${{ steps.work.outputs.fox }}"
 
           source build/envsetup.sh
