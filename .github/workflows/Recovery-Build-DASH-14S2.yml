@@ -54,6 +54,33 @@ jobs:
           echo "root=${GITHUB_WORKSPACE}/workspace" >> "$GITHUB_OUTPUT"
           echo "fox=${GITHUB_WORKSPACE}/workspace/fox_14.1" >> "$GITHUB_OUTPUT"
 
+      - name: DASH fast source gate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          GATE="${RUNNER_TEMP}/dash-fast-gate"
+          rm -rf "$GATE"
+          git init "$GATE"
+          git -C "$GATE" remote add origin "${DEVICE_TREE_URL}"
+          git -C "$GATE" fetch --depth=1 origin "${DEVICE_TREE_COMMIT}"
+          git -C "$GATE" checkout --detach FETCH_HEAD
+
+          test "$(git -C "$GATE" rev-parse HEAD)" = "${DEVICE_TREE_COMMIT}"
+
+          cd "$GATE"
+
+          test -f fenrir/dash-fenrir-lk.xz
+          test -f fenrir/dash-fenrir-preloader.xz
+          test -f fenrir/payload-manifest.txt
+          test -f tools/preflight-dash-tree.py
+          test -f recovery/recovery.fstab
+
+          echo "5b554a903ee6edf34fd17345a9e2c8db62fcee1fdc2f2924138c4a189fe3f933  fenrir/dash-fenrir-lk.xz" | sha256sum -c -
+          echo "24680c0992bf7accda36c53c41d2042334427cf5045a9a67328089bd307bcf73  fenrir/dash-fenrir-preloader.xz" | sha256sum -c -
+
+          echo "DASH FAST GATE: PASS"
+
       - name: Prepare build environment
         shell: bash
         run: |
