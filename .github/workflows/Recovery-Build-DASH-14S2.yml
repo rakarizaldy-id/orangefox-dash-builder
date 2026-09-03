@@ -15,7 +15,7 @@ jobs:
       LUNCH_TARGET: "twrp_dash-ap2a-eng"
 
       DEVICE_TREE_URL: "https://github.com/rakarizaldy-id/orangefox-dash.git"
-      DEVICE_TREE_COMMIT: "748ca8e5e18cdafe3435a85c52d13ed30a5a6aaf"
+      DEVICE_TREE_COMMIT: "9272b0dcddbb9c45e46435eccb38544b80194bcd"
 
       KERNEL_REPO: "https://github.com/xiaomi-dash/android_device_xiaomi_dash-kernel.git"
       KERNEL_COMMIT: "c3d766d2d99e6344649f9eeca52d405d48ca75dc"
