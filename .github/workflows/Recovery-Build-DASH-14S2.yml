@@ -15,7 +15,7 @@ jobs:
       LUNCH_TARGET: "twrp_dash-ap2a-eng"
 
       DEVICE_TREE_URL: "https://github.com/rakarizaldy-id/orangefox-dash.git"
-      DEVICE_TREE_COMMIT: "c17bb1f20481d1fd3c8cc37f29ac0879cb63458f"
+      DEVICE_TREE_COMMIT: "748ca8e5e18cdafe3435a85c52d13ed30a5a6aaf"
 
       KERNEL_REPO: "https://github.com/xiaomi-dash/android_device_xiaomi_dash-kernel.git"
       KERNEL_COMMIT: "c3d766d2d99e6344649f9eeca52d405d48ca75dc"
@@ -67,7 +67,7 @@ jobs:
           sudo bash android_build_env.sh
 
       - name: Install OpenJDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: zulu
           java-version: "17"
